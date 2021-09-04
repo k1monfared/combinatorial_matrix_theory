@@ -1,0 +1,5 @@
+G = graphs.CompleteGraph(5)
+L = [1,2,3,4,5]
+
+A = lambda_siep(G, L, iter=1000, epsilon=.1)
+check_output_lambda_siep(A,precision=64)

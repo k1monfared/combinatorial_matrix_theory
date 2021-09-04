@@ -1,0 +1,8 @@
+G = Graph(graphs.PetersenGraph().min_spanning_tree())
+
+L = [-3,-1,2,4,6,8,11,15,19,23]
+M = [-2,1,3,5,7,10,12,17,21]
+i = 1
+
+A=lambda_mu_for_tree(G,L,M,i)
+check_output_lambda_mu_for_tree(A,i,precision=12)

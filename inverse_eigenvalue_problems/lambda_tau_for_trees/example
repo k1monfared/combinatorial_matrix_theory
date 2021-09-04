@@ -1,0 +1,10 @@
+
+G = Graph(graphs.PetersenGraph().min_spanning_tree())
+
+L = [-3,-2,2,3,6,8,9,11,15,19]
+T = [-1,1,4,5,7,10,12,14]
+r = 1
+s = 2
+
+A=lambda_tau_for_tree(G,L,T,r,s)
+check_output_lambda_tau_for_tree(A,r,s,precision=12)

@@ -1,0 +1,213 @@
+# A preocess solve the Inverse Spectral Problems for  Structured Matrix Polynomials.
+# This code is written by Keivan Hassani Monfared to accompany the article...
+
+#########################################################################
+# Lineraize a matrix polynomial
+#########################################################################
+def linearize_matrix_polynomial(A):
+    # input: A, a list of k matrices of size n where A[i] is the coefficient of x^i in a matrix polynomial for i = 0,...,k-1
+    # output: L, linearization of the matrix polynomial, a (k-1)x(k-1) block matrix of blocks of size nxn
+    # E.g. A = [B,C,D], corresponding to the matrix polynomial A(z) = B + Cz + Dz^2 + Ez^3. Let F = E^(-1)
+    # Then the output L is, L = 
+    # [  O,    I,    O]
+    # [  O,    O,    I]
+    # [-FB,  -FC,  -FD]
+    # In this particular one I will assume the polynomials are monic and hence F = I.
+    # First, let's read some of the information
+    #k = len(A)-1 # k is the degree of the polynomial
+    k = len(A) # k is the degree of the polynomial
+    n = A[0].ncols() #assuming the input matrices are all of the same size, and square, n is their size
+    #I'll build the components of the L as this:
+        # O is the tall zero block matrix on the top left
+        # I is the identity matrix on the top right
+        # F is the inverse of the leading coefficient, which is I
+        # P is the last block row of L
+    #if det(A[-1]) == 0:
+    #    raise ValueError('The leading coefficient is not invertible.')
+    #F = (A[-1]).inverse()
+    O = zero_matrix(n*(k-1),n)
+    I = identity_matrix(n*(k-1))
+    #P = P = block_matrix(1,k,[F*M for M in A[:-1]],subdivide=True)
+    P = P = block_matrix(1,k,[M for M in A[:]],subdivide=True)
+    Q = block_matrix(1,2,[O,I],subdivide=True)
+    L = block_matrix(2,1,[Q,-P],subdivide=False)
+    return(L)
+    
+#########################################################################
+# Build variable
+#########################################################################
+def build_variables(n,x='x'):
+    # construct n+1 choose 2 variables to fill an nxn symmetric matrix, with label x
+    names = [ [] for i in range(n^2) ]
+    count = 0
+    for i in range(n):
+        for j in range(n):
+            names[count] = (SR(str(x) + '_' + str(j) + '_' + str(i)))
+            count += 1   
+    return(names)
+    
+#########################################################################
+# Define the function f that maps a matrix to the coefficients of its characteristic polynomial
+#########################################################################
+def CharPoly(Mat):
+    # input: A square matrix
+    # output: the list of coefficients of the characteristic polynomial not including the leading coefficient 1
+    # the list starts with the constant term and goes up
+    X = matrix(Mat)
+    n = X.ncols()
+    C_X = X.characteristic_polynomial()
+    Y = [C_X[i] for i in range(n)]
+    return(Y)
+    
+#########################################################################
+# Construct the coefficinet matrices of a diagnal matrix polynomial with given roots
+#########################################################################
+def diagonal_polynomial_matrix_with_roots(Lambda,k,n):
+    #Lambda is a list of roots of the polynomial matrix of length nk
+    #k is the degree of the polynomial
+    #n is the size of matrix
+    #output is the list of nonleading coefficients of monic matrix polynomial which has the given roots
+    #the first matrix is the constant term, the second matrix is the linear term etc.
+    each_diag = [prod([x-Lambda[i+k*j] for i in range(k)]) for j in range(n)]
+    AsList = list(matrix([[term[0] for term in p.coefficients()] for p in each_diag]).transpose())[:-1]   
+    B = [diagonal_matrix(AsList[i]) for i in range(k)]
+    return(B)
+    
+############################################################################
+# This solves the Lambda-ISPMPG
+############################################################################
+def lambda_qiep(G,L,A0=None,iter=2,epsilon = .01,verbose=False):
+                        # solve degree k polynomial siep
+                        # G is a list of k graphs on n vertices (not including the leading coefficient)
+                        # G[0] is the graph of the constant term, G[1] is the graph of the linear term etc.
+                        # L is the list of nk desired distinct proper values
+                        # A0 is the leading coefficient, usually a positive definite matrix. 
+                        # If A0 is not given, we set it equal to the identity matrix of size n, after defining n below
+                        # iter is the number of itterations of the Newton's method
+                        # epsilon: the off-diagonal entries will be equal to epsilon
+                        
+    k = len(G) #here I am assuming the graph of the leading coefficient (empty graph) is not given. 
+               #Then k is the degree of the polynmial and also the number of graphs
+    n = G[0].order() #the size of the matrices
+    if A0 == None:
+        A0 = identity_matrix(n)
+    if verbose == True:
+        print('Creating variables ...')
+    my_variables = [ build_variables(n,'x'+str(i)) for i in range(k) ] #variables x_i go into matrix X_i
+    R = PolynomialRing(CC,[ my_variables[s][count] for s in range(k) for count in range(n^2) ])
+    X = [0 for s in range(k)] #preallocating X
+    count = 0
+    if verbose == True:
+        print('Putting the variables in the matrix ...')
+    for s in range(k): #now fill it with matrices of variables
+        tempX = [ [0 for i in range(n)] for j in range(n) ] #preallocate each one
+        for i in range(n):
+            for j in range(n):
+                x = R.gens()[count]
+                tempX[i][j] = x
+                tempX[j][i] = x
+                count += 1
+        X[s] = matrix(R,tempX)
+    if verbose == True:
+        print('Linearizing the matrix polynomial ...')
+    LX = linearize_matrix_polynomial(X)
+    if verbose == True:
+        print('Creating the function f for the implicit function theorem ...')
+    Y = matrix(CharPoly(LX)) - matrix(CharPoly(diagonal_matrix(L)))
+    important_variables = [my_variables[i][j*(n+1)] for i in range(k) for j in range(n)]
+    J = matrix(R,n*k)
+    if verbose == True:
+        print('Calculating the Jacobian ...')
+    for i in range(n*k):
+        for j in range(n*k):
+            J[i,j] = derivative(Y[0][i],important_variables[j])
+    diagonalB = diagonal_polynomial_matrix_with_roots(Lambda,k,n)
+    B = [diagonalB[i] + epsilon * G[i].adjacency_matrix() for i in range(k)]
+    count = 0
+    while count < iter:
+        T = [ B[r][i,j] for r in range(k) for i in range(n) for j in range(n)]
+        C = (J(T)).solve_right(Y(T).transpose())
+        ListC = list(C) 
+        adjustment_term = [diagonal_matrix([ListC[i*n+j][0] for j in range(n)]) for i in range(k)]
+        B = [ B[i] - adjustment_term[i]  for i in range(k)]
+        count += 1
+        if verbose == True:
+            print("\r Newton's method iteration: %d/%d" %(count,iter))
+    if verbose == True:
+            print('Done.')
+    return(B)
+     
+##########################################################################
+# This shows the output matrix polynomial, its linearization, the graphs of coefficients, and the proper values
+##########################################################################
+def check_output_lambda_ispmpg(A,precision=10,latex=True,verbose=True):
+    # input: B is a list of coefficients of a matrix polynomial with leading coefficinet
+        # being the identitiy matrix. It is supposed to be the output of the function
+        # lambda_qiep(). It is expected that all the matrices are real symmetric of the same
+        # size. No check is done for this.
+    # input: precision is an integer that shows how many digits do I want to be 
+        # printed at the end. Default is 10
+    # input: latex is a boolean telling if to print the latex code of the matrix 
+        # coefficients with the given precision or not. For use in a paper or slide.
+    # output: None. The matrix polynomial, its linearization, it's eigenvalues with
+        # the given prcision, the graphs of the coefficients and a bunch of other things will
+        # printed.
+    L = linearize_matrix_polynomial(B) 
+    if verbose == True:      
+        pretty_print(html('<h3>Checking the proper values and the graphs</h3>'))
+        k = len(B) # degree of the matrix polynomial
+        n = (B[0]).nrows()
+        for i in range(k):
+            print('The coefficient of degree %s is: \n' %i)
+            print(B[i].n(digits=precision))
+            print(' \n ... and its graph is: \n')
+            Adj = matrix(B[i].ncols())
+            for k in range(B[i].ncols()):
+                for l in range(B[i].ncols()):
+                    if k != l:
+                        if B[i][k,l] != 0:
+                            Adj[k,l] = 1
+            FinalGraph = Graph(Adj)
+            FinalGraph.graphplot(layout='circular').show(figsize=[2,2])            
+            if latex == True:
+                print('... and its latex code is: \n')
+                try:
+                    tempbi = B[i].n(digits=precision)
+                    latex(tempbi)
+                except TypeError:
+                    print('The latex output does not work at the moment!! \n')
+        print('The linearization of the monic matrix polynomial with above coefficients is: \n')
+        print(L.n(digits=precision))
+        print('')   
+    print('The proper values of the monic matrix polynomial with %s significant digits are: \n' %precision)
+    CL = L.change_ring(CC)
+    for e in CL.eigenvalues():
+        print(e.n(digits=precision))
+
+##########################################################################
+# Example 0: This one does not converge
+##########################################################################
+n = 4
+G = [graphs.PathGraph(n), graphs.PathGraph(n)]
+Lambda = [-12, -14, -16, -18, -20, -22, -24, -26] 
+B = lambda_qiep(G,Lambda,iter=10,epsilon = 1,verbose=True)
+check_output_lambda_ispmpg(B,precision=5,latex=False,verbose=True)
+
+##########################################################################
+# Example 1: This one converges
+##########################################################################
+n = 4
+G = [graphs.PathGraph(n), graphs.PathGraph(n)]
+Lambda = [-2, -4, -6, -8, -10, -12, -14, -16] 
+B = lambda_qiep(G,Lambda,iter=100,epsilon = 0.5)
+check_output_lambda_ispmpg(B,precision=5,latex=False,verbose=True)
+
+##########################################################################
+# Example 2: This one converges
+##########################################################################
+g = Graph({0:[1,2], 1:[2], 2:[3]}) #constant term
+h = Graph({0:[2], 1:[], 2:[3]}) #linear term
+G = [g,h]
+Lambda = [-2, -4, -6, -8, -10, -12, -14, -16] 
+B = lambda_qiep(G,Lambda,iter=10,epsilon = 0.5)
+check_output_lambda_ispmpg(B,precision=10,latex=False,verbose=True)

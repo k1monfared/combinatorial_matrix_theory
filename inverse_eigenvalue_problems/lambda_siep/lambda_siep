@@ -1,0 +1,78 @@
+# Build variables, and the matrix corresponding to it
+def build_variables(n):
+    names = [ [[] for i in range(j+1)] for j in range(n) ]
+    for i in range(n):
+        for j in range(i+1):
+            names[i][j] = (SR('x_' + str(j) + '_' + str(i)))
+    return(names)
+
+# Define the function f that maps a matrix to the coefficients of its characteristic polynomial
+def CharPoly(Mat):
+    X = matrix(Mat)
+    n = X.ncols()
+    C_X = X.characteristic_polynomial()
+    Y = []
+    for i in range(n):
+        Y.append(C_X[i])
+    return(Y)
+
+# This solves that lambda SIEP
+def lambda_siep(G,L,iter=100,epsilon = .1):
+# G is any graph on n vertices
+# L is the list of n desired distinct eigenvalues
+# m is the number of itterations of the Newton's method
+# epsilon: the off-diagonal entries will be equal to epsilon
+    n = G.order()
+    my_variables = build_variables(n)
+    R = PolynomialRing(CC,[my_variables[i][j] for i in range(n) for j in range(i+1)])
+    R.gens()
+    R.inject_variables()
+    X = [ [[] for i in range(n)] for j in range(n) ]
+    for j in range(n):
+        for i in range(j+1):
+            X[i][j] =  R.gens()[j*(j+1)/2 + i]
+            X[j][i] =  R.gens()[j*(j+1)/2 + i]
+    Y = matrix(CharPoly(X)) - matrix(CharPoly(diagonal_matrix(L)))
+    J = matrix(R,n)
+    for i in range(n):
+        for j in range(n):
+            J[i,j] = derivative(Y[0][i],my_variables[j][j])
+    B = diagonal_matrix(L) + epsilon * G.adjacency_matrix()
+    count = 0
+    while count < iter:
+        T = [ B[i,j] for i in range(n) for j in range(i+1)]
+        C = (J(T)).solve_right(Y(T).transpose())
+        LC = list(C)
+        B = B - diagonal_matrix([LC[i][0] for i in range(n)])
+        count = count + 1
+    return(B)
+
+# This shows the output matrix, its eigenvalues and the eigenvlaues of A(i), and its graph
+def check_output_lambda_siep(A,precision=8):
+# A is a matrix which is the output of lambda_siep()
+# i is the one that also is entered in lambda_siep()
+# precision is an integer that shows how many digits do I want to be printed at the end, and I set the default to be 8
+    eigA = A.eigenvalues()
+    EigA = []
+    for e in eigA:
+        EigA = EigA + [e.n(precision)]
+    print('A is:') 
+    print(A.n(precision))
+    print(' ')
+    print('Eigenvalues of A are: %s') %(EigA)
+    AdjA = matrix(A.ncols())
+    for i in range(A.ncols()):
+        for j in range(A.ncols()):
+            if i != j:
+                if A[i,j] != 0:
+                    AdjA[i,j] = 1
+    FinalGraph = Graph(AdjA)
+    print(' ' )
+    print('And the graph of A is:')
+    FinalGraph.show()
+
+# Usage:
+G = graphs.CompleteGraph(5)
+L = [1,2,3,4,5]
+A = lambda_siep(G, L, iter=1000, epsilon=.1)
+check_output_lambda_siep(A,precision=32)

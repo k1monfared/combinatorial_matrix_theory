@@ -1,0 +1,557 @@
+##########################################################################
+# This checks to see if the output is correct, and if it is not it prints a meaningful error message.
+# This is a boolean function with outputs True and False
+##########################################################################
+
+def is_input_for_lambda_mu(G,L,M,i):
+# G is a tree on n vertices with vertex i
+# L is a list of n distinct real numbers
+# M is a list of n-1 distinct real numbers that strictly interlaces L
+# this function checks to so if the above are actually true
+
+    Error = 0 # this simply indicates which error message to show
+    Errors = ["Calculating...", # 0, nothing is wrong 
+             "There are duplicate lambda's!", # 1
+             "There are duplicate mu's!", # 2
+             "Some lambda is equal to some mu!", # 3
+             "Number of lambda's should be exactly one more than the number of mu's!", # 4
+             "'i' should be a vertex of the graph , that is, an integer between 0 and %s, but it is %s." %(len(L)-1,i), #5
+             "G should be either a tree or the adjacency matrix of a tree!", # 6
+             "Number of eigenvalues should be equal to the number of the vertices", # 7
+             "Interlacing inequalities are not met!", # 8
+             ]
+    if len(L) > len(set(L)): # Are lambda's distinct?
+        Error = 1
+    elif len(M) > len(set(M)): # Are mu's distinct?
+        Error = 2
+    elif len(L+M) > len(set(L+M)): # Are lambda's different from mu's?
+        Error = 3
+    elif len(L) != len(M) + 1: # Are lambda's one more than mu's?
+        Error = 4
+    elif not G.has_vertex(i): # Is i a vertex of G?
+        Error = 5
+    elif not G.is_tree():
+        Error = 6
+    elif len(L) != G.size()+1:
+        Error = 7
+    else: # Are the Cauchy interlacing inequalities met?
+        L.sort()
+        M.sort() 
+        for l in range(len(L)-1):
+            if M[l] < L[l] or M[l] > L[l+1]: 
+                Error = 8
+                
+    if Error != 0: # Return the error message, if any.
+        print Errors[Error]
+        print ('---------------------------------------')        
+        print ('---------------No output!--------------')
+        print ('---------------------------------------')
+        return(False)
+    else: 
+        return(True)
+
+##########################################################################
+# This gets two lists, adds the elements of each list, and returns the difference of the two sums
+##########################################################################
+
+def difference_of_sums(L,M):
+# L is list of numbers
+# M is list of numbers
+    sumL = 0
+    sumM = 0
+   
+    for l in range(len(L)): # Add up lambda's
+        sumL = sumL + L[l]
+       
+    for m in range(len(M)): # Add up mu's
+        sumM = sumM + M[m]
+       
+    return(sumL - sumM)
+
+######################################################################
+# This finds the connected components of G after deleting vertex i and returns I =[[H_j, e_j] for j ], where H_j are connected components of G(i) and e_j is the vertex of H_j which was a neighbors of i in G.
+######################################################################
+
+def list_of_connected_components(G,i):
+# G is a tree with a vertex i
+
+    # Make a copy of G and delete the i-th vertex of it and call it H
+    H = copy(G)
+    H.delete_vertices([i])     
+    CCH = H.connected_components()
+
+    N = G.neighbors(i) # Get a list of nbrs of vertex i in G
+    
+    I = [] # a list of connected components of [G(i),v] where v is the neighbor of i in G and in that component
+    for cc in range(len(CCH)):
+        e = (set(CCH[cc])).intersection(set(N)).pop() # this intersection has only one element and I want to look at that one element.
+        I = I + [[H.subgraph(CCH[cc]),e]]
+    return(I)
+
+######################################################################
+# This looks lists all the numerators of the partial fraction decompositions of prod(x - l_i) / prod(x - m_i)
+######################################################################
+
+def numerators_of_pfd(L,M):
+    B = []  # f/g = (x - a) - sum b/(x - u) and B is a list of all b's
+    for m in range(len(M)):
+        top = 1
+        bottom = 1
+        
+        for j in range(len(L)):
+            top = top * (M[m] - L[j])
+        
+        for j in range(len(M)):
+            if j != m:
+                bottom = bottom * (M[m] - M[j])
+                
+        B = B + [- top / bottom]
+    return(B)
+
+#####################################################################
+# This gets two numbers and two lists and returns the square root of the coefficient of y_j along with some other things that are gonna be used in further calculations
+#####################################################################
+
+def coefficient_of_yj(count,s,M,B):
+
+    tempL = [] # mu's will be broken into lists of size s and each list will be assigned as new lamba's                       
+    tempF = 0 # This is a rational function that adds enough b / (x - mu) for each component
+        
+    for l in range(count, count + s): # goes through this connected component
+        tempL = tempL + [M[l]]
+        tempF = tempF + B[l] / (x - M[l])
+        
+    v = ((tempF.numerator()).expand()).leading_coefficient(x)
+    w = ((tempF.denominator()).expand()).leading_coefficient(x)
+    
+    return(sqrt(v/w),tempF,tempL)
+
+##########################################################################
+# This piece solves the lambda-mu SIEP for trees
+# This is a version of lambda_mu_for_tree() that looks at the indices of the graph and if the largest index is n (counted from zero), then it returns a (n+1)x(n+1) matrix and the indices that are missing in the graph will have zero rows and columns at the end. This is because later I want to add the missing vertices from another graph.
+##########################################################################
+
+def lambda_mu_for_tree(G,L,M,i,Out=None):
+# G is a graph or the adjacency matrix of a graph. In case that it is a matrix, it's type should match 'sage.matrix.matrix_integer_dense.Matrix_integer_dense'
+# L is a litst of distinct 
+# real numbers to be realized
+# as eigenvalues of A
+# M is a list of distinct 
+# real numbers to be realiezed
+# as eigenvalues of A(i)
+# i is the vertex to be deleted
+
+    if type(G) == sage.matrix.matrix_integer_dense.Matrix_integer_dense:
+        G = Graph(G)      
+    
+    indices = list(G)
+    order = max(indices)+1
+
+    if Out is None:
+        Out = [[0 for j in range(order)] for j in range(order)]
+    
+#################################################
+
+    if is_input_for_lambda_mu(G,L,M,i): # check the inputs
+
+#################################################
+# Here I want to evaluate the diagonal entry (i,i)
+
+        if len(L) == 1: # If there is only one lambda, then that's the diagonal entry
+            a = copy(L[0])
+            Out[i][i] = copy(a)
+            
+            #Out = Matrix(RR,Out).matrix_from_rows(indices).matrix_from_columns(indices)
+            Out = Matrix(RR,Out) # I'm not deleting extra rows and columns since I'll need them in lambda_tau problem
+            
+            return(Out)
+        
+        
+        # If there are more than one lambda, then the diagonal entry is the difference of traces (sum of lambda's minus sum of mu's)
+        a = difference_of_sums(L,M)
+        Out[i][i] = copy(a)
+          
+########################################################
+        
+        I = list_of_connected_components(G,i)
+        
+        B = numerators_of_pfd(L,M)
+
+############################################################
+
+        count = 0        
+        for component in range(len(I)): # remember 'I' was a list of connected components
+            s = I[component][0].size() + 1 # +1 because size() starts from 0
+            e = I[component][1]
+            
+            # this gets s, M, B and returns the sqrt(v/w)  
+            (a,tempF,tempL) = coefficient_of_yj(count,s,M,B)
+
+            # Write the i,j_i entry of the output matrix
+            Out[i][e] = Out[e][i] = a # this is A_{i, j_i} entry
+            
+            # Here I find the roots of the numerator of the sums of b / (x - mu)            
+            if (tempF.numerator()).degree(x) == 0:
+                tempM = []
+            
+            else:
+                # we know all the solution are real, but there are calculation errors, so we'll find all the complex solutions and then omit the very small imaginary parts
+                S = (tempF.numerator()).roots(ring = CC, multiplicities = False)
+                for solution in range(len(S)):
+                    S[solution] = S[solution].real()
+                    
+                tempM = copy(S)
+                
+            count = count + s
+            
+            # Here I call lambda_mu_for_tree() for subtree 'component'            
+            lambda_mu_for_tree(I[component][0], tempL, tempM, e, Out)
+
+#################################################
+            
+        #Out = Matrix(RR,Out).matrix_from_rows(indices).matrix_from_columns(indices)
+        Out = Matrix(RR,Out) # I'm not deleting extra rows and columns since I'll need them in lambda_tau problem
+        
+        return(Out)
+        
+##########################################################################
+# This shows the output matrix, its eigenvalues and the eigenvlaues of A(i), and its graph
+##########################################################################
+
+def check_output_lambda_mu_for_tree(A,i,precision=8):
+# A is a matrix which is the output of lambda_mu_for_trees()
+# i is the one that also is entered in lambda_mu_for_trees()
+# precision is an integer that shows how many digits do I want to be printed at the end, and I set the default to be 8
+
+    eigA = A.eigenvalues()
+    EigA = []
+    for e in eigA:
+        EigA = EigA + [e.n(precision)]
+    eigB = (A.delete_rows([i]).delete_columns([i])).eigenvalues()
+    EigB = []
+    for e in eigB:
+        EigB = EigB + [e.n(precision)]
+    print('A is:') 
+    print(A.n(precision))
+    print(' ')
+    print('Eigenvalues of A are: %s') %(EigA)
+    print(' ')
+    print('Eigenvalues of A(%s) are: %s') %(i,EigB)
+    
+    AdjA = matrix(A.ncols())
+    for i in range(A.ncols()):
+        for j in range(A.ncols()):
+            if i != j:
+                if A[i,j] != 0:
+                    AdjA[i,j] = 1
+    FinalGraph = Graph(AdjA)
+    
+    print(' ' )
+    print('And the graph of A is:')
+    FinalGraph.show()
+
+
+##########################################################################
+# This checks to see if the output is correct, and if it is not it prints a meaningful error message.
+# This is a boolean function with outputs True and False
+##########################################################################
+
+def is_input_for_lambda_tau(G,L,T,r,s):
+# G is a tree or the adjacency matrix of a tree.
+# L is list of distinct real numbers to be the eigenvalues of A
+# T is list of distinct real numbers to be the eigenvalues of A({r,s})
+# r and s are the vertices of G to be deleted
+    Error = 0 # this simply indicates which error message to show
+    Errors = ["Calculating...", # 0, nothing is wrong 
+             "There are duplicate lambda's!", # 1
+             "There are duplicate tau's!", # 2
+             "Some lambda is equal to some tau!", # 3
+             "Number of lambda's should be exactly two more than the number of tau's!", # 4
+             "'{r,s}' should be and edge of the graph!", #5
+             "G should be either a tree or the adjacency matrix of a tree!", # 6
+             "Number of eigenvalues should be equal to the number of the vertices", # 7
+             "Second order interlacing inequalities are not met!", # 8
+             ]
+             
+    if len(L) > len(set(L)): # Are lambda's distinct?
+        Error = 1
+    elif len(T) > len(set(T)): # Are mu's distinct?
+        Error = 2
+    elif len(L+T) > len(Set(L+T)): # Are lambda's different from tau's?
+        Error = 3
+    elif len(L) != len(T) + 2: # Are lambda's two more than tau's?
+        Error = 4
+    elif not G.has_edge(r,s): # Check that {r,s} is an edge of the graph (otherwise deleting it does not produce any errors)
+        Error = 5
+    elif not G.is_tree():
+        Error = 6
+    elif len(L) != G.size()+1:
+        Error = 7
+    else: # Are the Cauchy interlacing inequalities met?
+        L.sort()
+        T.sort() 
+        for l in range(len(L)-2):
+            if T[l] < L[l] or T[l] > L[l+2]: 
+                Error = 8
+                
+    if Error != 0: # Return the error message, if any.
+        print Errors[Error]
+        print ('---------------------------------------')        
+        print ('---------------No output!--------------')
+        print ('---------------------------------------')
+        return(False)
+    else:
+        return(True)
+
+#########################################################
+# This partitions two lists into four lists
+#########################################################
+
+def partition_mu_tau(M,T,n1,n2):
+    
+    TauPairings = []
+    MuPairings = []
+    
+    M.sort()
+    T.sort()
+    MT = M + T
+    MT.sort()
+    
+    newMT = copy(MT)
+    
+    M1 = []
+    M2 = []
+    T1 = []
+    T2 = []
+    
+    k=0 
+    
+    for i in range(0,len(MT)-1): # I can make bounds even smaller since first 
+                                 # and last things can't be a tau pairing
+        a = copy(MT[i])
+        b = copy(MT[i+1])
+        if a in T and b in T:
+            k=k+1
+            TauPairings = TauPairings + [a,b]
+            T.remove(a)
+            T.remove(b)
+            newMT.remove(a)
+            newMT.remove(b)
+            T1 = T1 + [a]
+            T2 = T2 + [b]
+            i = i + 1 #Because if there is a tau pairing, the next one is not a tau or...
+    
+        if a in M and b in M:
+            MuPairings = MuPairings + [a,b]
+            i = i + 1 #Because if there is a lambda pairing, the next one is not a lambda or...
+            M.remove(a)
+            M.remove(b)
+            newMT.remove(a)
+            newMT.remove(b)
+            M1 = M1 + [a]
+            M2 = M2 + [b]
+    
+    while len(M1) < n1:
+        a = newMT[0]
+        b = newMT[1]
+        
+        if a in M:
+            M1 = M1 + [a]
+            T1 = T1 + [b]
+        else:
+            M1 = M1 + [b]
+            T1 = T1 + [a]
+        newMT.remove(a)
+        newMT.remove(b)
+        
+    while len(M2) < n2:
+        a = newMT[0]
+        b = newMT[1]
+        
+        if a in M:
+            M2 = M2 + [a]
+            T2 = T2 + [b]
+        else:
+            M2 = M2 + [b]
+            T2 = T2 + [a]
+        newMT.remove(a)
+        newMT.remove(b)
+        
+    return(M1,T1,M2,T2)
+
+############################################################
+# ebsilon is the maximum of negative local extrema of f/g. This finds ebsilon where L,T are roots of f and g, respectively
+############################################################
+
+def maximum_negative_local_extrema(L,T):
+    var('x')
+    f = 1
+    for i in range(len(L)):
+        f = f * (x - L[i])
+        
+    g = 1
+    for i in range(len(T)):
+        g = g * (x- T[i])
+    
+    h = f/g
+    
+    hprime = h.diff(x)
+    hzegond = hprime.diff(x)
+    
+    Hprime = (hprime.numerator()).roots(ring = RR, multiplicities = False)
+    LocalMaxima = []
+    
+    for i in range(len(Hprime)):
+        t = h(Hprime[i])
+        if t < 0:
+            if abs(hzegond(Hprime[i])) > 0: # Here I'm a little concerned that it might be very 
+                                            #close to zero but not exactly zero due to precision 
+                                            #errors. So if that occures I need to think of a good 
+                                            #way to increase 0 to something larger. That's why I'm 
+                                            #using abs() > 0, instead of != 0.
+                LocalMaxima = LocalMaxima + [t]
+    
+    return(h,max(LocalMaxima))
+
+###################################################
+# This piece solves the lambda-tau SIEP for trees using the lambda_mu_for_tree() function above and the partition_mu_tau() function above.
+###################################################
+
+def lambda_tau_for_tree(G,L,T,r,s):
+# G is a tree or the adjacency matrix of a tree. If it is a matrix, its type should match 'sage.matrix.matrix_integer_dense.Matrix_integer_dense'
+# L is list of distinct real numbers to be the eigenvalues of A
+# T is list of distinct real numbers to be the eigenvalues of A({r,s})
+# r and s are the vertices of G to be deleted
+    
+    
+    
+    
+    
+    
+    if type(G) == sage.matrix.matrix_integer_dense.Matrix_integer_dense:
+        G = Graph(G)
+        
+#################################################    
+
+    if is_input_for_lambda_tau(G,L,T,r,s): # check if input is correct    
+
+#################################################
+# delete the edge {r,s} from the tree and find the two connected components G1 (containing r) and G2 (containing s)
+
+        H = copy(G)
+        H.delete_edge(r,s)
+
+###################################################        
+# After deleting the edge (r,s) there are two connected components, I'll make a list of them and figure out which one has r in it, and which one has s in it
+
+        I=[] # I'm making a list of connected components of G({r,s}), well, there are two of them
+        for component in H.connected_components():
+                I = I + [H.subgraph(component)]
+                
+        if I[0].has_vertex(r):
+            G1 = I[0]
+            G2 = I[1]
+        else:
+            G1 = I[1]
+            G2 = I[0]
+            
+###################################################
+# Find number of vertices in G1 and G2
+
+        n1 = G1.size() + 1 # It counts things from 0
+        n2 = G2.size() + 1 # It counts things from 0
+
+###################################################
+# Now count the number of tau pairings, k, and check if n1,n2 > k # I could have done this inside the function that partitions the M and T, but I don't want to call it if there is no solution.
+        
+        k = 0 # Number of tau pairings
+        LT = L+T 
+        LT.sort()
+        for i in range(1,len(LT)-1): # I can make bounds even smaller since first and last things can't be a tau pairing
+            if LT[i] in T and LT[i+1] in T:
+                k=k+1
+                i = i + 1 #Because if there is a tau pairing, the next one is not a tau
+                
+        if n1 < k or n2 < k:
+            print("There is no solution for this problem, since the number of the vertices in each side of 'r' and 's' need to be greater than the number of tau-pairings: %s. But the number of vertices on the two sides are %s and %s.") %(k,n1,n2)
+            print ('---------------------------------------')        
+            print ('--------------No Solution!-------------')
+            print ('---------------------------------------')
+            return()
+
+###################################################        
+# a_{r,s} can varry as much as ebsilon, where ebsilon is the maximum of negative local extrema of f/g. This finds ebsilon where L,T are roots of f and g, respectively
+        
+        (h,m) = maximum_negative_local_extrema(L,T)
+        
+        ebsilon = min(-9/10 * m, 1) # I'm choosing this because sometimes |m| is 
+                                    # big and I don't want a huge entry in my matrix
+
+###################################################
+
+        # find M: the roots of h + ebsilpn
+        M = ((h + ebsilon).numerator()).roots(ring = RR, multiplicities = False)
+        
+        # call partition_mu_tau() in order to get two lists
+        (M1,T1,M2,T2) = partition_mu_tau(M,T,n1,n2)
+        
+        # now call lambda_mu_for_tree(G1,M1,T1,r)
+        A1 = lambda_mu_for_tree(G1,M1,T1,r)
+        A2 = lambda_mu_for_tree(G2,M2,T2,s)
+
+###################################################
+# A1 and A2 don't have correct sizes, I just add enough zeros to make them as big as the final output
+
+        B1 = matrix(RR,len(L))
+        B2 = matrix(RR,len(L))
+        
+        for i in range(A1.ncols()):
+            for j in range(A1.ncols()):
+                B1[i,j] = A1[i,j]
+        for i in range(A2.ncols()):
+            for j in range(A2.ncols()):
+                B2[i,j] = A2[i,j]
+
+###################################################
+# now it's time to put all of them together + ebsilon on the (r,s) entry, to get the final matrix 
+
+        Out = B1 + B2
+        Out[r,s] = Out[s,r] = sqrt(ebsilon)
+        return(Out)
+
+
+####################################################
+# This shows the output matrix, its eigenvalues and the eigenvlaues of A(i), and its graph
+####################################################
+
+def check_output_lambda_tau_for_tree(A,r,s,precision=8):
+# A is a matrix which is the output of lambda_mu_for_trees()
+# i is the one that also is entered in lambda_mu_for_trees()
+# precision is an integer that shows how many digits do I want to be printed at the end, and I set the default to be 8
+
+    eigA = A.eigenvalues()
+    EigA = []
+    for e in eigA:
+        EigA = EigA + [e.n(precision)]
+    eigB = (A.delete_rows([r,s]).delete_columns([r,s])).eigenvalues()
+    EigB = []
+    for e in eigB:
+        EigB = EigB + [e.n(precision)]
+    print('A is:') 
+    print(A.n(precision))
+    print(' ')
+    print('Eigenvalues of A are: %s') %(EigA)
+    print(' ')
+    print('Eigenvalues of A({%s,%s}) are: %s') %(r,s,EigB)
+    
+    AdjA = matrix(A.ncols())
+    for i in range(A.ncols()):
+        for j in range(A.ncols()):
+            if i != j:
+                if A[i,j] != 0:
+                    AdjA[i,j] = 1
+    FinalGraph = Graph(AdjA)
+    
+    print(' ' )
+    print('And the graph of A is:')
+    FinalGraph.show()

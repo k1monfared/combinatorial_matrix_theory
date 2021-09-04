@@ -1,0 +1,60 @@
+# this is an auxiliary function which computes the direct sum of two given matrices
+def direct_sum(A,B):
+    ar = A.nrows()
+    ac = A.ncols()
+    br = B.nrows()
+    bc = B.ncols()
+    
+    M = matrix.block([[A, zero_matrix(ar,bc)],[zero_matrix(br,ac) ,B]])
+    
+    return(M)
+    
+############################################################
+# this is the main function which construct the matrix
+def nonwhere_zero_matrix_with_spectrum(L):
+    # L is a list of desired eigenvalues with at least two of them distinct
+    L.sort()
+    
+    # This checks to see if at least two of them are distinct
+    if L[0] == L[-1]:
+        print('Not all eigenvalues can be equal. Such matrix does not exist')
+        return()
+
+    # We do an induction. The base of the iduction is a matrix with two eigenvalues that are the two smallest distinct numbers in the list L
+    
+    # Start with the first two numbers in the list:
+    a = L[0]
+    b = L[1]
+    
+    count = 0
+    
+    # Search until you find the second smallest number in the list that is not equal to the first number in the list
+    while true:
+        if L[count] > L[0]:
+            b = L[count]
+            count += 1 # this becomes the size of B
+            break
+        count += 1
+    
+    # Construct the matrix for the base:
+    B = (b-a) / (count) * ones_matrix(count) + a * identity_matrix(count)
+
+    # Here c and d will give me an orthogonal matrix Q. I'm letting them to be 1, but one could change them as desired, as long as they are nonzero we'll get what we need
+    c = 1
+    d = 1
+    
+    # This is the inductive step. Each time add a new row and column with a diagonal entry equal to a the next eigenvalue in the list, and then multiply by the orthogonal matrix to make that row and column nowherezero
+    while count < len(L):
+        B = direct_sum(matrix([L[count]]), B)
+        Q = direct_sum(1/sqrt(c^2 + d^2) * matrix([[c,-d],[d,c]]),identity_matrix(count-1))
+        
+        B = (Q.transpose()) * B * Q
+        count += 1
+    
+    # The desired matrix is ready
+    return(B)
+    
+#######################################
+# Usage:
+A = nonwhere_zero_matrix_with_spectrum([1,1,1,3,3,6])
+A.n(16)
